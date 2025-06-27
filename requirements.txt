@@ -11,3 +11,4 @@ pymc
 networkx
 numba
 joblib
+PyYAML

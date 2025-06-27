@@ -1,7 +1,11 @@
 from .config import DefaultConfig
 from .data_loader import DataLoader
 from .pipeline import Pipeline
-# Potential future imports for visualization or specific methods if they are not part of pipeline
+from ..methods.parsimony import ParsimonyMethod
+from ..methods.maximum_likelihood import MaximumLikelihoodMethod
+from ..methods.bayesian import BayesianMethod
+from ..methods.ensemble import EnsembleMethod
+# Potential future imports for visualization
 # from ..visualization.interactive import InteractiveVisualizer
 
 class ChromosomeReconstructionFramework:
@@ -15,18 +19,33 @@ class ChromosomeReconstructionFramework:
 
         Args:
             config: A configuration object. If None, DefaultConfig is used.
-                    This config object is passed down to DataLoader and Pipeline.
         """
         self.config = config or DefaultConfig()
-        self.data_loader = DataLoader(self.config)
-        self.pipeline = Pipeline(self.config)
+        self.data_loader = DataLoader(self.config) # DataLoader can take config for future use
+        self.pipeline = None # Pipeline will be instantiated with a specific method later
         
-        self.tree = None
-        self.counts = None
+        self.phylo_data = None # Will hold PhyloData object from DataLoader
+        self.tree = None # Convenience attribute, points to phylo_data.tree
+        self.counts = None # Convenience attribute, points to phylo_data.traits
         self.reconstruction_results = None
         self.events = None
         
         print(f"ChromosomeReconstructionFramework initialized with config: {type(self.config).__name__}")
+
+    def _get_method_instance(self, method_name: str):
+        """
+        Factory helper method to get an instance of a reconstruction method class.
+        """
+        if method_name.lower() == 'parsimony':
+            return ParsimonyMethod()
+        elif method_name.lower() == 'ml' or method_name.lower() == 'maximum_likelihood':
+            return MaximumLikelihoodMethod()
+        elif method_name.lower() == 'bayesian':
+            return BayesianMethod()
+        elif method_name.lower() == 'ensemble':
+            return EnsembleMethod()
+        else:
+            raise ValueError(f"Unknown reconstruction method: {method_name}")
 
     def load_data(self, tree_file: str, counts_file: str, tree_format: str = 'newick', **kwargs):
         """
@@ -41,67 +60,92 @@ class ChromosomeReconstructionFramework:
         Raises:
             NotImplementedError: As the full implementation of data_loader methods is pending.
         """
-        # Placeholder: Will use self.data_loader to load tree and counts
-        # Will also call validate_data
-        print(f"Framework: Loading tree from {tree_file} and counts from {counts_file}")
-        # self.tree = self.data_loader.load_tree(tree_file, format=tree_format)
-        # self.counts = self.data_loader.load_chromosome_counts(counts_file, **kwargs)
-        # self.data_loader.validate_data(self.tree, self.counts)
-        # print("Framework: Data loaded and validated.")
-        raise NotImplementedError("Data loading not fully implemented yet.")
+        print(f"Framework: Loading tree from {tree_file} and counts from {counts_file} using {type(self.data_loader).__name__}")
+        try:
+            # DataLoader's load_phylo_data now returns a PhyloData object and handles validation.
+            # Pass tree_format and any other relevant kwargs (like species_col, counts_col if they differ from defaults)
+            # The **kwargs in framework.load_data are intended for pandas read_csv options.
+            phylo_data_object = self.data_loader.load_phylo_data(
+                tree_file,
+                counts_file,
+                tree_format=tree_format,
+                **kwargs # these are kwargs for pd.read_csv
+            )
+            self.phylo_data = phylo_data_object # Store the whole object
+            self.tree = self.phylo_data.tree
+            self.counts = self.phylo_data.traits # This is a DataFrame
+            print("Framework: Data loaded and validated successfully.")
+        except FileNotFoundError as e:
+            print(f"Framework: Error - {e}")
+            # Re-raise or handle as appropriate for the framework's error handling strategy
+            raise
+        except ValueError as e:
+            print(f"Framework: Error - {e}")
+            # Re-raise or handle
+            raise
+        except Exception as e:
+            print(f"Framework: An unexpected error occurred during data loading: {e}")
+            # Re-raise or handle
+            raise
 
     def reconstruct_ancestors(self, method: str = 'ensemble', **kwargs):
         """
         Performs ancestral state reconstruction using the configured pipeline and method.
-        # try:
-        #     self.data_loader.load_tree(tree_file, tree_format=tree_format) # Corrected: data_loader.load_tree
-        #     self.data_loader.load_chromosome_counts(counts_file, **kwargs) # Corrected: data_loader.load_chromosome_counts
-        #     self.data_loader.validate_data() # validate_data uses internal tree/counts from data_loader
-        #
-        #     self.tree = self.data_loader.tree
-        #     self.counts = self.data_loader.counts
-        #     print("Framework: Data loading and validation initiated (actual loading depends on DataLoader).")
-        # except Exception as e:
-        #     print(f"Framework: Error during data loading or validation: {e}")
+
         Args:
             method (str, optional): The reconstruction method to use (e.g., 'parsimony', 'ml', 'bayesian', 'ensemble').
-                                    Defaults to 'ensemble'.
-            **kwargs: Additional keyword arguments for the reconstruction method.
+                                    Defaults to 'ensemble' (though actual default method might come from config).
+                                    This 'method' string needs to be mapped to an actual method instance for the Pipeline.
+            **kwargs: Additional keyword arguments for the reconstruction method/pipeline configuration.
 
         Raises:
-            NotImplementedError: As the full implementation of pipeline methods is pending.
+            NotImplementedError: If the pipeline integration or method selection is not fully implemented.
+            ValueError: If data has not been loaded first.
         """
-        # Placeholder: Will use self.pipeline to run reconstruction
-        print(f"Framework: Reconstructing ancestors using {method} method...")
-        # self.reconstruction_results = self.pipeline.run_reconstruction(self.tree, self.counts, method, **kwargs)
-        # print("Framework: Ancestor reconstruction complete.")
-        raise NotImplementedError("Ancestor reconstruction not fully implemented yet.")
+        if self.phylo_data is None:
+            raise ValueError("Data not loaded. Please call load_data() first.")
+
+        print(f"Framework: Reconstructing ancestors using '{method}' method...") # Added quotes for clarity
+
+        try:
+            method_instance = self._get_method_instance(method_name=method)
+
+            # Instantiate the pipeline with the chosen method
+            # Note: self.pipeline is currently None or could hold a default.
+            # For each run, we might want a fresh pipeline if its state is important,
+            # or ensure self.pipeline can have its method updated.
+            # The current Pipeline design takes method in __init__.
+            current_pipeline = Pipeline(method=method_instance)
+
+            # The 'kwargs' passed to reconstruct_ancestors are method-specific configurations
+            # For example, for parsimony, it might be {'algorithm': 'Fitch'}
+            # For ML, it might be {'model': 'BM'}
+            self.reconstruction_results = current_pipeline.run(data=self.phylo_data, config=kwargs)
+
+            print(f"Framework: Ancestor reconstruction using '{method}' complete.")
+            if self.reconstruction_results:
+                # Attempt to access a common parameter like 'model_name' or 'parsimony_score' if available
+                result_params = self.reconstruction_results.parameters
+                param_info = ""
+                if result_params:
+                    if 'model_name' in result_params:
+                        param_info = f"Model: {result_params['model_name']}"
+                    if 'parsimony_score' in result_params:
+                        param_info += f" Score: {result_params['parsimony_score']}"
+                print(f"Framework: Results obtained. {param_info.strip()}")
+
+        except NotImplementedError as e:
+            # This will catch NotImplementedError raised by the specific method (e.g., ML, Bayesian)
+            print(f"Framework: The method '{method}' is not fully implemented: {e}")
+            # Re-raise so it's clear in testing that the specific method isn't ready
+            raise
+        except Exception as e:
+            print(f"Framework: Error during ancestor reconstruction with method '{method}': {e}")
+            # Re-raise for general errors
+            raise
             
     def detect_events(self, **kwargs):
         """
-        # if self.tree is None or self.counts is None:
-        #     print("Framework: Tree and/or counts data not loaded. Please load data first.")
-        #     return None
-        #
-        # try:
-        #     # The pipeline's run_analysis or a more specific run_reconstruction method
-        #     # would be called here. For now, assume run_analysis is the entry point.
-        #     # The pipeline itself would need to be configured to know which reconstruction to run.
-        #     # This might involve setting a 'method' in the config passed to the pipeline
-        #     # or having a specific method in the pipeline to set the reconstruction strategy.
-        #
-        #     # For example, if pipeline has a dedicated reconstruction method:
-        #     # self.reconstruction_results = self.pipeline.run_reconstruction(
-        #     #     tree=self.tree,
-        #     #     counts=self.counts,
-        #     #     method=reconstruction_method_to_use,
-        #     #     **kwargs
-        #     # )
-        #
-        #     # Or, if run_analysis handles it based on its internal config:
-        #     # Let's assume data for pipeline is a tuple (tree, counts)
-        #     pipeline_input = (self.tree, self.counts) # Or however pipeline expects data
-        #     # The pipeline would need to be enhanced to accept method and kwargs here
         Detects evolutionary events based on reconstruction results using the pipeline or a dedicated module.
 
         Args:
@@ -165,32 +209,64 @@ if __name__ == '__main__':
     framework = ChromosomeReconstructionFramework()
     
     # Example of how methods would be called (will raise NotImplementedError)
-    dummy_tree_file = "dummy_tree.nwk"
-    dummy_counts_file = "dummy_counts.csv"
+    dummy_tree_file = "dummy_framework_tree.nwk"
+    dummy_counts_file = "dummy_framework_counts.csv"
     
-    # Create dummy files to allow calls to proceed to the print statements before erroring
+    # Create dummy files with default column names for DataLoader
+    # DataLoader expects 'species' and 'count' by default.
     with open(dummy_tree_file, "w") as f:
-        f.write("((A:1,B:1):1,C:2);")
+        f.write("((taxonA:1,taxonB:1):1,taxonC:2);") # Using taxonA, B, C to match counts
     with open(dummy_counts_file, "w") as f:
-        f.write("taxon_name,chromosome_number\nA,10\nB,12\nC,14")
+        f.write("species,count\ntaxonA,10\ntaxonB,12\ntaxonC,14")
 
     print("\n--- Testing load_data ---")
     try:
+        # Test with default column names ('species', 'count')
         framework.load_data(dummy_tree_file, dummy_counts_file)
-    except NotImplementedError as e:
-        print(f"Caught expected error: {e}")
+        if framework.phylo_data:
+            print(f"SUCCESS: Data loaded. Tree tips: {framework.tree.get_leaf_names()}, Counts head:\n{framework.counts.head()}")
+        else:
+            print("FAILURE: Data not loaded, phylo_data is None.")
+    except Exception as e: # Catch any exception during load_data
+        print(f"ERROR during load_data: {e}")
 
-    print("\n--- Testing reconstruct_ancestors ---")
-    try:
-        # Simulate data being loaded for this call
-        framework.tree = "dummy_tree_object" 
-        framework.counts = "dummy_counts_object"
-        framework.reconstruct_ancestors(method='parsimony')
-    except NotImplementedError as e:
-        print(f"Caught expected error: {e}")
-    finally:
-        framework.tree = None # Reset
-        framework.counts = None # Reset
+    print("\n--- Testing reconstruct_ancestors (Parsimony Fitch) ---")
+    if framework.phylo_data: # Only proceed if data was loaded
+        try:
+            # ParsimonyMethod with Fitch is implemented.
+            # The 'algorithm' Fitch is a kwarg for the ParsimonyMethod's run config.
+            framework.reconstruct_ancestors(method='parsimony', algorithm='Fitch')
+            if framework.reconstruction_results:
+                print(f"SUCCESS: Parsimony reconstruction complete. Score: {framework.reconstruction_results.parameters.get('parsimony_score')}")
+                # print(f"Annotated tree: {framework.reconstruction_results.annotated_tree.get_ascii(attributes=['name', 'state', 'states'])}")
+            else:
+                print("FAILURE: Reconstruction finished but no results stored.")
+        except NotImplementedError as e:
+            print(f"ERROR: reconstruct_ancestors call failed as method is not fully implemented: {e}")
+        except Exception as e:
+            print(f"ERROR during reconstruct_ancestors (Parsimony): {e}")
+    else:
+        print("SKIPPED: reconstruct_ancestors test because data loading failed or was skipped.")
+
+    print("\n--- Testing reconstruct_ancestors (ML - expected to be not implemented) ---")
+    if framework.phylo_data: # Only proceed if data was loaded
+        try:
+            # MaximumLikelihoodMethod is expected to raise NotImplementedError.
+            # It needs a 'model' in its config.
+            framework.reconstruct_ancestors(method='ml', model='BM')
+            print("UNEXPECTED SUCCESS: ML reconstruction ran without error (should be NotImplemented).")
+        except NotImplementedError as e:
+            print(f"SUCCESS: Caught expected NotImplementedError for ML method: {e}")
+        except Exception as e:
+            print(f"ERROR during reconstruct_ancestors (ML): {e}")
+    else:
+        print("SKIPPED: reconstruct_ancestors ML test because data loading failed or was skipped.")
+
+    # Reset for next potential tests if any were added
+    framework.phylo_data = None
+    framework.tree = None
+    framework.counts = None
+    framework.reconstruction_results = None
 
     print("\n--- Testing detect_events ---")
     try:

@@ -1,8 +1,6 @@
-"""import pymc as pm
-
+import pymc as pm
 from ..core.models import PhyloData, AnalysisResult
 from .base import BaseMethod
-
 
 class BayesianMethod(BaseMethod):
     """
@@ -35,24 +33,27 @@ class BayesianMethod(BaseMethod):
         model_type = config.get("model_type", "Mk")  # Default to Mk model
         mcmc_params = config.get("mcmc_params", {})
 
-        print(f"Running Bayesian analysis with model: {model_type}")
+        print(f"Running Bayesian analysis with model: {model_type}, MCMC params: {mcmc_params}")
 
         # 1. Build the PyMC model
-        # pymc_model = self._build_pymc_model(data, model_type)
+        # Example: pymc_model = self._build_pymc_model(data, model_type, config)
+        # This would involve defining random variables for model parameters
+        # and likelihoods based on the phylogenetic tree and data.
         raise NotImplementedError("Building the PyMC model is not yet implemented.")
 
         # 2. Run the MCMC sampler
         # with pymc_model:
-        #     trace = pm.sample(**mcmc_params)
+        #     trace = pm.sample(**mcmc_params) # draws, tune, cores, etc.
 
         # 3. Process results and return them in the standard format
-        # annotated_tree = self._annotate_tree_with_posterior(data.tree, trace)
-        # parameters = self._summarize_posterior_parameters(trace)
+        # This would involve summarizing the trace, calculating posterior means/medians for ancestral states,
+        # and potentially annotating the tree with these results.
+        # annotated_tree = self._annotate_tree_with_posterior(data.tree.copy(), trace)
+        # summary_parameters = self._summarize_posterior_parameters(trace)
 
         # return AnalysisResult(
         #     annotated_tree=annotated_tree,
-        #     parameters=parameters,
-        #     likelihood=None,  # Typically not a single value in Bayesian stats
-        #     raw_output=trace   # Store the full MCMC trace
+        #     parameters=summary_parameters,
+        #     likelihood=None,  # Or posterior predictive checks, WAIC, LOO, etc.
+        #     raw_output={'trace': trace} # Store the full MCMC trace
         # )
-"""
